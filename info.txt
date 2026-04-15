@@ -1,0 +1,6 @@
+.\.venv\Scripts\Activate.ps1    Aktuvace venv
+
+cd backend
+uvicorn main:app --reload       spust server
+
+http://127.0.0.1:8000/docs
