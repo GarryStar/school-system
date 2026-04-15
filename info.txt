@@ -4,3 +4,17 @@ cd backend
 uvicorn main:app --reload       spust server
 
 http://127.0.0.1:8000/docs
+
+git add .
+git commit -m "popis změny"
+git push
+
+Na zacatku prace
+git pull
+
+Na konci prace
+git add .
+git commit -m "co jsi dělal"
+git push
+
+git status      Info
