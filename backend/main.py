@@ -137,24 +137,6 @@ def require_admin(current_user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=403, detail="Nedostatečná oprávnění")
     return current_user
 
-@app.post("/users", response_model=UserRead)
-def create_user(user: UserCreate, db: Session = Depends(get_db)):
-    existing_user = db.query(models.User).filter(models.User.username == user.username).first()
-    if existing_user:
-        raise HTTPException(status_code=400, detail="Username už existuje")
-
-    new_user = models.User(
-        username=user.username,
-        password_hash=password_hash.hash(user.password),
-        role=user.role
-    )
-
-    db.add(new_user)
-    db.commit()
-    db.refresh(new_user)
-
-    return new_user
-
 @app.post("/login")
 def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
     user = db.query(models.User).filter(models.User.username == form_data.username).first()
@@ -174,18 +156,31 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
         "token_type": "bearer"
     }
 
-@app.get("/")
-def read_root():
-    return {"message": "API funguje ✅"}
+@app.post("/users", response_model=UserRead)
+def create_user(user_data: UserCreate, current_user=Depends(require_admin), db: Session = Depends(get_db)):
+    existing_user = db.query(models.User).filter(models.User.username == user_data.username).first()
+    if existing_user:
+        raise HTTPException(status_code=400, detail="Username už existuje")
 
+    new_user = models.User(
+        username=user_data.username,
+        password_hash=password_hash.hash(user_data.password),
+        role=user_data.role
+    )
 
-@app.post("/students")
-def create_student(student: StudentCreate, db: Session = Depends(get_db)):
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
+
+    return new_user
+
+@app.post("/students", response_model=StudentRead)
+def create_student(student_data: StudentCreate, current_user=Depends(require_admin), db: Session = Depends(get_db)):
     new_student = models.Student(
-        first_name=student.first_name,
-        last_name=student.last_name,
-        birth_date=student.birth_date,
-        city=student.city,
+        first_name=student_data.first_name,
+        last_name=student_data.last_name,
+        birth_date=student_data.birth_date,
+        city=student_data.city,
         active=True
     )
 
@@ -195,32 +190,14 @@ def create_student(student: StudentCreate, db: Session = Depends(get_db)):
 
     return new_student
 
-@app.get("/me")
-def read_me(current_user: dict = Depends(get_current_user)):
-    return current_user
-
 @app.get("/students", response_model=list[StudentRead])
 def get_students( db: Session = Depends(get_db)):
     students = db.query(models.Student).options(joinedload(models.Student.school_class)).all()
 
     return students
 
-@app.get("/students/{student_id}", response_model=StudentRead)
-def get_student(student_id: int, db: Session = Depends(get_db)):
-    student = (
-        db.query(models.Student)
-        .options(joinedload(models.Student.school_class))
-        .filter(models.Student.id == student_id)
-        .first()
-    )
-
-    if student is None:
-        raise HTTPException(status_code=404, detail="Student nenalezen")
-
-    return student
-
 @app.put("/students/{student_id}", response_model=StudentRead)
-def update_student(student_id: int, student_data: StudentUpdate, db: Session = Depends(get_db)):
+def update_student(student_id: int, student_data: StudentUpdate, current_user=Depends(require_admin), db: Session = Depends(get_db)):
     student = db.query(models.Student).filter(models.Student.id == student_id).first()
 
     if student is None:
@@ -237,8 +214,8 @@ def update_student(student_id: int, student_data: StudentUpdate, db: Session = D
 
     return student
 
-@app.delete("/students/{student_id}")
-def delete_student(student_id: int, user=Depends(require_admin), db: Session = Depends(get_db)):
+@app.delete("/students/{student_id}")   #Delete student
+def delete_student(student_id: int, current_user=Depends(require_admin), db: Session = Depends(get_db)):
     student = db.query(models.Student).filter(models.Student.id == student_id).first()
 
     if student is None:
@@ -249,8 +226,26 @@ def delete_student(student_id: int, user=Depends(require_admin), db: Session = D
 
     return {"message": f"Student s ID {student_id} byl smazán"}
 
-@app.post("/parent-student-links")
-def create_parent_student_link(link_data: ParentStudentLinkCreate, db: Session = Depends(get_db)):
+@app.get("/students/{student_id}", response_model=StudentRead)
+def get_student(student_id: int, db: Session = Depends(get_db)):
+    student = (
+        db.query(models.Student)
+        .options(joinedload(models.Student.school_class))
+        .filter(models.Student.id == student_id)
+        .first()
+    )
+
+    if student is None:
+        raise HTTPException(status_code=404, detail="Student nenalezen")
+
+    return student
+
+@app.get("/me")
+def read_me(current_user: dict = Depends(get_current_user)):
+    return current_user
+
+@app.post("/parent-student-links")      #Add parets with student
+def create_parent_student_link(link_data: ParentStudentLinkCreate , current_user=Depends(require_admin), db: Session = Depends(get_db)):
     parent_user = db.query(models.User).filter(models.User.id == link_data.parent_user_id).first()
     if parent_user is None:
         raise HTTPException(status_code=404, detail="Parent user nenalezen")
@@ -267,6 +262,14 @@ def create_parent_student_link(link_data: ParentStudentLinkCreate, db: Session =
         student_id=link_data.student_id
     )
 
+    existing_link = db.query(models.ParentStudentLink).filter(
+        models.ParentStudentLink.parent_user_id == link_data.parent_user_id,
+        models.ParentStudentLink.student_id == link_data.student_id
+    ).first()
+
+    if existing_link:
+        raise HTTPException(status_code=400, detail="Tato vazba už existuje")
+
     db.add(new_link)
     db.commit()
     db.refresh(new_link)
@@ -277,7 +280,17 @@ def create_parent_student_link(link_data: ParentStudentLinkCreate, db: Session =
         "student_id": new_link.student_id
     }
 
-@app.get("/my-students", response_model=list[StudentRead])
+@app.get("/parents", response_model=list[UserRead])
+def get_parents(current_user=Depends(require_admin), db: Session = Depends(get_db)):
+    parents = (
+        db.query(models.User)
+        .filter(models.User.role == "parent")
+        .all()
+    )
+
+    return parents
+
+@app.get("/my-students", response_model=list[StudentRead])  #zobrazeni studenta rodicem
 def get_my_students(current_user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
     if current_user["role"] != "parent":
         raise HTTPException(status_code=403, detail="Pouze pro rodiče")
@@ -288,15 +301,18 @@ def get_my_students(current_user: dict = Depends(get_current_user), db: Session 
 
     student_ids = [link.student_id for link in links]
 
-    students = db.query(models.Student).filter(
-        models.Student.id.in_(student_ids)
-    ).all()
+    students = (
+        db.query(models.Student)
+        .options(joinedload(models.Student.school_class))
+        .filter(models.Student.id.in_(student_ids))
+        .all()
+    )
 
     
     return students
 
-@app.post("/classes")
-def create_class(class_data: ClassCreate, db: Session = Depends(get_db)):
+@app.post("/classes", response_model=ClassBasicRead)   #Vytvori tridu
+def create_class(class_data: ClassCreate, current_user=Depends(require_admin), db: Session = Depends(get_db)):
     new_class = models.Class(
         name=class_data.name,
         school_year=class_data.school_year
@@ -307,8 +323,8 @@ def create_class(class_data: ClassCreate, db: Session = Depends(get_db)):
 
     return new_class
 
-@app.put("/students/{student_id}/assign-class/{class_id}")
-def assign_student_to_class(student_id: int, class_id: int, db: Session = Depends(get_db)):
+@app.put("/students/{student_id}/assign-class/{class_id}")  #Prida studenta do tridy
+def assign_student_to_class(student_id: int, class_id: int, current_user=Depends(require_admin), db: Session = Depends(get_db)):
     student = db.query(models.Student).filter(models.Student.id == student_id).first()
     if student is None:
         raise HTTPException(status_code=404, detail="Student nenalezen")
@@ -326,7 +342,7 @@ def assign_student_to_class(student_id: int, class_id: int, db: Session = Depend
 
     return {"message": f"Student {student_id} přiřazen do třídy {class_id}"}
 
-@app.get("/classes", response_model=list[ClassRead])
+@app.get("/classes", response_model=list[ClassRead]) 
 def get_classes( db: Session = Depends(get_db)):
     classes = db.query(models.Class).all()
 
@@ -343,7 +359,7 @@ def get_classes( db: Session = Depends(get_db)):
     return result
 
 @app.get("/classes/{class_id}/students", response_model=list[StudentRead])
-def get_students_by_class(class_id: int, db: Session = Depends(get_db)):
+def get_students_by_class(class_id: int, current_user=Depends(require_admin), db: Session = Depends(get_db)):
 
     school_class = db.query(models.Class).filter(models.Class.id == class_id).first()
 
