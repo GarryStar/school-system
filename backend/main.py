@@ -14,6 +14,8 @@ from pwdlib import PasswordHash
 from app.database import engine, Base, SessionLocal
 from app import models
 
+from sqlalchemy.orm import Session, joinedload
+
 app = FastAPI()
 SECRET_KEY = "supersecretkey123"  # později změníme
 ALGORITHM = "HS256"
@@ -47,6 +49,23 @@ class StudentCreate(BaseModel):
 
 Base.metadata.create_all(bind=engine)
 
+class ClassBasicRead(BaseModel):
+    id: int
+    name: str
+    school_year: str
+
+    class Config:
+        from_attributes = True
+
+class ClassRead(BaseModel):
+    id: int
+    name: str
+    school_year: str
+    student_count: int
+
+    class Config:
+        from_attributes = True
+
 class StudentRead(BaseModel):
     id: int
     first_name: str
@@ -54,6 +73,7 @@ class StudentRead(BaseModel):
     birth_date: date | None = None
     city: str | None = None
     active: bool
+    school_class: ClassBasicRead | None = None
 
     class Config:
         from_attributes = True
@@ -68,6 +88,11 @@ class StudentUpdate(BaseModel):
 class ParentStudentLinkCreate(BaseModel):
     parent_user_id: int
     student_id: int
+
+class ClassCreate(BaseModel):
+    name: str
+    school_year: str
+
 
 def create_access_token(data: dict):
     to_encode = data.copy()
@@ -181,7 +206,7 @@ def read_me(current_user: dict = Depends(get_current_user)):
 def get_students():
     db: Session = SessionLocal()
 
-    students = db.query(models.Student).all()
+    students = db.query(models.Student).options(joinedload(models.Student.school_class)).all()
 
     db.close()
     return students
@@ -190,7 +215,12 @@ def get_students():
 def get_student(student_id: int):
     db: Session = SessionLocal()
 
-    student = db.query(models.Student).filter(models.Student.id == student_id).first()
+    student = (
+        db.query(models.Student)
+        .options(joinedload(models.Student.school_class))
+        .filter(models.Student.id == student_id)
+        .first()
+    )
 
     db.close()
 
@@ -288,6 +318,84 @@ def get_my_students(current_user: dict = Depends(get_current_user)):
     students = db.query(models.Student).filter(
         models.Student.id.in_(student_ids)
     ).all()
+
+    db.close()
+    return students
+
+@app.post("/classes")
+def create_class(class_data: ClassCreate):
+    db: Session = SessionLocal()
+
+    new_class = models.Class(
+        name=class_data.name,
+        school_year=class_data.school_year
+    )
+
+    db.add(new_class)
+    db.commit()
+    db.refresh(new_class)
+    db.close()
+
+    return new_class
+
+@app.put("/students/{student_id}/assign-class/{class_id}")
+def assign_student_to_class(student_id: int, class_id: int):
+    db: Session = SessionLocal()
+
+    student = db.query(models.Student).filter(models.Student.id == student_id).first()
+    if student is None:
+        db.close()
+        raise HTTPException(status_code=404, detail="Student nenalezen")
+
+    school_class = db.query(models.Class).filter(models.Class.id == class_id).first()
+    if school_class is None:
+        db.close()
+        raise HTTPException(status_code=404, detail="Třída nenalezena")
+
+    student.class_id = class_id
+
+    db.commit()
+    db.refresh(student)
+    db.close()
+
+    return {"message": f"Student {student_id} přiřazen do třídy {class_id}"}
+
+@app.get("/classes", response_model=list[ClassRead])
+def get_classes():
+    db: Session = SessionLocal()
+
+    classes = db.query(models.Class).all()
+
+    result = []
+    for school_class in classes:
+        student_count = len(school_class.students)
+
+        result.append({
+            "id": school_class.id,
+            "name": school_class.name,
+            "school_year": school_class.school_year,
+            "student_count": student_count
+        })
+
+    db.close()
+    return result
+
+@app.get("/classes/{class_id}/students", response_model=list[StudentRead])
+def get_students_by_class(class_id: int):
+    db: Session = SessionLocal()
+
+    school_class = db.query(models.Class).filter(models.Class.id == class_id).first()
+
+    if school_class is None:
+        db.close()
+        raise HTTPException(status_code=404, detail="Třída nenalezena")
+
+    students = (
+        db.query(models.Student)
+        .options(joinedload(models.Student.school_class))
+        .filter(models.Student.class_id == class_id)
+        .all()
+    )
 
     db.close()
     return students

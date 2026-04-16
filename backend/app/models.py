@@ -12,6 +12,9 @@ class Student(Base):
     birth_date = Column(Date, nullable=True)
     city = Column(String(100), nullable=True)
     active = Column(Boolean, default=True)
+    class_id = Column(Integer, ForeignKey("classes.id"), nullable=True)
+
+    school_class = relationship("Class", back_populates="students")
 
 class User(Base):
     __tablename__ = "users"
@@ -27,3 +30,12 @@ class ParentStudentLink(Base):
     id = Column(Integer, primary_key=True, index=True)
     parent_user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     student_id = Column(Integer, ForeignKey("students.id"), nullable=False)
+
+class Class(Base):
+    __tablename__ = "classes"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(50), nullable=False, unique=True)
+    school_year = Column(String(20), nullable=False)
+
+    students = relationship("Student", back_populates="school_class")
