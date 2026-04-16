@@ -12,3 +12,10 @@ __pycache__/
 
 # env files
 .env
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Python cache
+*.log

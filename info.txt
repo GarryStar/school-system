@@ -13,8 +13,17 @@ Na zacatku prace
 git pull
 
 Na konci prace
-git add .
+PS D:\tvorba\Generovani\school-system>
+git add .           pak git status
 git commit -m "co jsi dělal"
 git push
 
 git status      Info
+
+Rychlá analogie (pomáhá hodně)
+
+commit = uložit změny
+push = nahrát do cloudu
+pull = stáhnout aktuální verzi
+branch = kopie dokumentu pro experimenty
+PR = návrh změn ostatním
